@@ -55,7 +55,7 @@ async function doJailBreak() {
     var result = KernelExploit672();
     if (result === 0 || result === 91) {
       window.log("\nKernel exploit succeeded", "green");
-      getPayload("payload.bin");
+      getPayload672("payload.bin");
       window.log("Homebrew Enabler loaded", "green");
       window.log("\nBad Hoist by Fire30, 6.7x Kernel Exploit by Sleirsgoevy");
     } else if (result === 179) {
