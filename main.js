@@ -55,6 +55,7 @@ async function doJailBreak() {
     var result = KernelExploit672();
     if (result === 0 || result === 91) {
       window.log("\nKernel exploit succeeded", "green");
+      // Inject HEN payload
       getPayload672("payload.bin");
       window.log("Homebrew Enabler loaded", "green");
       window.log("\nBad Hoist by Fire30, 6.7x Kernel Exploit by Sleirsgoevy");
@@ -64,15 +65,17 @@ async function doJailBreak() {
       window.log("\nAn error occured during Kernel Exploit\nPlease restart console and try again...", "red");
     }
   } else if ((config_target >= 0x700) && (config_target < 0x1000)) { // 7.00 to 9.60
-    await loadScript('psfree_lapse_helpers.js');
+    await loadScript('psfree_lapse_shared.js');
     await loadScript('psfree.js');
-    Init_Globals();
+    Init_PSFreeGlobals();
     jb_step_status = await doPSFreeExploit();
     if (jb_step_status !== 1) return;
     window.log("Starting Lapse Kernel Exploit...");
     await sleep(200); // Wait 200ms
-    await loadScript('kpatches.js');
-    await loadScript('lapse.js');
+    await loadScript('lapse_setup.js');
+    jb_step_status = await doLapseInit();
+    if (jb_step_status !== 1) return;
+    await loadScript('lapse_exploit.js');
     jb_step_status = await doLapseExploit();
     if (jb_step_status !== 1) return;
     await sleep(500); // Wait 500ms
