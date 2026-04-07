@@ -60,6 +60,7 @@ Additionally, the project utilizes **firmware-aware dynamic script loading** to 
 - **Increased modularity** — compared to my `psfree_lapse` repository, this project introduces a more modular architecture. Instead of relying on a single bundled `bundle.js` file, the exploit chain has been refactored into separate logical components like `helpers.js`, `psfree.js`, `kpatches.js` and `lapse.js`.
 - **Dynamic script loading** — this project implements firmware-aware dynamic script loading. Rather than loading a monolithic bundle, exploit stages are injected at runtime based on firmware and execution state. This provides: Clear stage separation, Reduced cross-component side effects and Improved firmware-specific targeting.
 - **BinLoader function** — The BinLoader function is activated on the second run of the exploit. After checking if the host is already jailbroken, the host starts the BinLoader and listens on port 9020. Send your payload using a compatible payload injector. My repo `psx_payload_injector` can also be used.
+- **Background image** — Background image support has been added. Rename your preferred image to **bg.jpg** and replace the existing file in the root directory. Make sure to use an image with an appropriate resolution.
 
 ## ToDo List
 
